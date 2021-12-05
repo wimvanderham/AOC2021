@@ -1,6 +1,6 @@
 /*------------------------------------------------------------------------
     File        : Day_03.p
-    Purpose     : 
+    Purpose     : Solve day 3 of Advent of Code 2021
     URL         : https://adventofcode.com/2021/day/3
 
     Syntax      :
