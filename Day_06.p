@@ -71,6 +71,7 @@ DO iChr = 1 TO NUM-ENTRIES (cLine):
    .
 END.
 
+/* Save temp-table in external file for fast loading */
 lOk = TEMP-TABLE ttFish:WRITE-JSON ("file", "output\ttFish.json").
 
 /* Sets Part to Process */
@@ -111,68 +112,72 @@ IF lPart[1] THEN DO:
    EMPTY TEMP-TABLE ttFish.
 END. /* Process Part One */
 
-/* Process Part Two */
-ETIME (YES).
-lOk = TEMP-TABLE ttFish:READ-JSON ("file", "output\ttFish.json").
-
-/* Forse Scoping to Whole Procedure */
-FIND FIRST ttGroup NO-ERROR.
-
-/* Save initial situation of single Fishes in Groups */
-FOR EACH ttFish
-BREAK 
-BY ttFish.iDay
-BY ttFish.iDaysLeft:
-   /* Create Summary of Initial Situation */
-   IF FIRST-OF (ttFish.iDaysLeft) THEN DO:
-      /* New Group for this number of Days Left */
-      CREATE ttGroup.
-      ASSIGN
-         ttGroup.iDay      = ttFish.iDay
-         ttGroup.iDaysLeft = ttFish.iDaysLeft
+IF lPart[2] THEN DO:
+   /* Process Part Two */
+   ETIME (YES).
+   
+   /* Load data from external file */
+   lOk = TEMP-TABLE ttFish:READ-JSON ("file", "output\ttFish.json").
+   
+   /* Forse Scoping to Whole Procedure */
+   FIND FIRST ttGroup NO-ERROR.
+   
+   /* Save initial situation of single Fishes in Groups */
+   FOR EACH ttFish
+   BREAK 
+   BY ttFish.iDay
+   BY ttFish.iDaysLeft:
+      /* Create Summary of Initial Situation */
+      IF FIRST-OF (ttFish.iDaysLeft) THEN DO:
+         /* New Group for this number of Days Left */
+         CREATE ttGroup.
+         ASSIGN
+            ttGroup.iDay      = ttFish.iDay
+            ttGroup.iDaysLeft = ttFish.iDaysLeft
+         .
+      END. /* New Group for this number of Days Left */
+      ASSIGN 
+         ttGroup.iNrFishes = ttGroup.iNrFishes + 1
       .
-   END. /* New Group for this number of Days Left */
-   ASSIGN 
-      ttGroup.iNrFishes = ttGroup.iNrFishes + 1
-   .
- 
-END. /* Create Summary of Initial Situation */
-
-DO iCurrentDay = 1 TO 256:
-   PAUSE 0.
-   IF lvlDebug THEN DO: 
-      IF iCurrentDay = 1 THEN DO: 
+    
+   END. /* Create Summary of Initial Situation */
+   
+   DO iCurrentDay = 1 TO 256:
+      PAUSE 0.
+      IF lvlDebug THEN DO: 
+         IF iCurrentDay = 1 THEN DO: 
+            DISPLAY 
+               iCurrentDay LABEL "Processing Day"
+               NOW         LABEL "Start Datetime"
+            WITH FRAME fr-Start 1 DOWN.
+         END.
          DISPLAY 
             iCurrentDay LABEL "Processing Day"
-            NOW         LABEL "Start Datetime"
-         WITH FRAME fr-Start 1 DOWN.
+            NOW         LABEL "Datetime"
+         .
       END.
-      DISPLAY 
-         iCurrentDay LABEL "Processing Day"
-         NOW         LABEL "Datetime"
-      .
+      /* Process a Whole Group of Fishes */
+      RUN processGroupDay
+         (INPUT iCurrentDay).
    END.
-   /* Process a Whole Group of Fishes */
-   RUN processGroupDay
-      (INPUT iCurrentDay).
-END.
-
-FOR EACH ttGroup:
-   ACCUM ttGroup.iNrFishes (TOTAL).
-END.
-ASSIGN 
-   iSolution = (ACCUM TOTAL ttGroup.iNrFishes).
-.
-
-OUTPUT TO "clipboard".
-PUT UNFORMATTED iSolution SKIP.
-OUTPUT CLOSE.
-
-MESSAGE 
-   SUBSTITUTE ("Solution: &1.", 
-      iSolution) SKIP (1)
-   SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
-VIEW-AS ALERT-BOX TITLE " 2021 - Day 06 - Part Two".
+   
+   FOR EACH ttGroup:
+      ACCUM ttGroup.iNrFishes (TOTAL).
+   END.
+   ASSIGN 
+      iSolution = (ACCUM TOTAL ttGroup.iNrFishes).
+   .
+   
+   OUTPUT TO "clipboard".
+   PUT UNFORMATTED iSolution SKIP.
+   OUTPUT CLOSE.
+   
+   MESSAGE 
+      SUBSTITUTE ("Solution: &1.", 
+         iSolution) SKIP (1)
+      SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
+   VIEW-AS ALERT-BOX TITLE " 2021 - Day 06 - Part Two".
+END. /* Process Part Two */
 
 CATCH oError AS Progress.Lang.Error :
    DEFINE VARIABLE iMessage      AS INTEGER   NO-UNDO.
@@ -184,11 +189,13 @@ CATCH oError AS Progress.Lang.Error :
       cErrorMessage = SUBSTITUTE ("&1~n&2", cErrorMessage, oError:GetMessage(iMessage)).
       iMessage = iMessage + 1.
    END.
+   IF oError:CallStack NE ? THEN DO:
+      cErrorMessage = SUBSTITUTE ("&1~n~nCall Stack:~n&2", cErrorMessage, oError:CallStack).
+   END.
+   
    MESSAGE "Error!" SKIP (1)
    SUBSTITUTE ("At line #: &1: &2", iLine, cLine) SKIP
    cErrorMessage SKIP(1) 
-   "Call Stack:" SKIP 
-   oError:CallStack
    VIEW-AS ALERT-BOX ERROR.
 
    RETURN.      
