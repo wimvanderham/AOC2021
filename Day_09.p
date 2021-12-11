@@ -87,10 +87,6 @@ FUNCTION getRiskLevel RETURNS INTEGER
     INPUT piY AS INTEGER) FORWARD.
 
 /* ***************************  Main Block  *************************** */
-
-
-
-/* **********************  Internal Procedures  *********************** */
 DISPLAY
    lPart[1] LABEL "Solve Part 1?" COLON 15 SKIP
    lPart[2] LABEL "Solve Part 2?" COLON 15 SKIP 
@@ -330,6 +326,8 @@ CATCH oError AS Progress.Lang.Error :
 
    RETURN.      
 END CATCH.
+
+/* **********************  Internal Procedures  *********************** */
 
 /* ************************  Function Implementations ***************** */
 
