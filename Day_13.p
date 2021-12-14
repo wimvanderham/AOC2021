@@ -35,7 +35,8 @@ DEFINE VARIABLE iPart        AS INTEGER   NO-UNDO.
 
 /* Specific */
 DEFINE VARIABLE cSection    AS CHARACTER NO-UNDO.
-DEFINE VARIABLE iLastFoldNr AS INTEGER NO-UNDO.
+DEFINE VARIABLE iLastFoldNr AS INTEGER   NO-UNDO.
+DEFINE VARIABLE lcOutput    AS CHARACTER NO-UNDO.
 
 DEFINE TEMP-TABLE ttPoint
    FIELD iX    AS INTEGER 
@@ -74,6 +75,7 @@ ETIME (YES).
 
 COPY-LOB FROM FILE "input\13.txt" TO OBJECT lcInput.
 
+/* Input file is divided in sections: Points and Folds */
 cSection = "Points".
 
 /* Read Input into Temp-table */
@@ -83,12 +85,14 @@ DO iLine = 1 TO NUM-ENTRIES (lcInput, "~n"):
    cLine = TRIM (ENTRY (iLine, lcInput, "~n")).
    IF cLine EQ "" THEN DO:
       IF cSection EQ "Points" THEN
+         /* Change of Section */
          cSection = "Folds".
       NEXT ReadBlock.
    END.
       
    CASE cSection:
       WHEN "Points" THEN DO:
+         /* Points section contains coordinates of dots */
          CREATE ttPoint.
          ASSIGN 
             ttPoint.iX    = INTEGER (ENTRY (1, cLine))
@@ -97,6 +101,10 @@ DO iLine = 1 TO NUM-ENTRIES (lcInput, "~n"):
          .
       END.
       WHEN "Folds" THEN DO:
+         /* Folds section contains fold information, e.g.:
+         ** fold along x=655
+         ** fold along y=447
+         */
          iLastFoldNr = iLastFoldNr + 1.
          CREATE ttFold.
          ASSIGN 
@@ -124,13 +132,19 @@ FOR EACH ttFold:
    /* Process Folds */
    CASE ttFold.cAxis:
       WHEN "x" THEN DO:
-         /* x Axis */
+         /* Fold over x Axis */
          FOR EACH ttPoint
          WHERE ttPoint.iX GT ttFold.iValue:
+            /* All Points to the Right of the Fold Axis
+            ** will overlap corresponding point on the same line (Y-coordinate)
+            ** with the same distance (ttPoint.iX - ttFold.iValue) 
+            ** from the folding axis
+            */
             FIND  ttOverlapPoint
             WHERE ttOverlapPoint.iX EQ ttFold.iValue - (ttPoint.iX - ttFold.iValue)
             AND   ttOverlapPoint.iY EQ ttPoint.iY NO-ERROR.
             IF NOT AVAILABLE ttOverlapPoint THEN DO:
+               /* Overlap point not yet available */
                CREATE ttOverlapPoint.
                ASSIGN 
                   ttOverlapPoint.iX = ttFold.iValue - (ttPoint.iX - ttFold.iValue)
@@ -142,11 +156,12 @@ FOR EACH ttFold:
                ttOverlapPoint.cChar = "#".
             END.
             
+            /* Remove Point */
             DELETE ttPoint.
          END.
-      END. /* x Axis */
+      END. /* Fold over x Axis */
       WHEN "y" THEN DO:
-         /* y Axis */
+         /* Fold over y Axis */
          FOR EACH ttPoint
          WHERE ttPoint.iY GT ttFold.iValue:
             FIND  ttOverlapPoint
@@ -166,53 +181,59 @@ FOR EACH ttFold:
             
             DELETE ttPoint.
          END.
-      END. /* y Axis */
+      END. /* Fold over y Axis */
    END CASE.
    
-   RUN exportGrid
-      (INPUT SUBSTITUTE ("output\ttPoint_&1.txt", ttFold.iFoldNr)).      
-   
+   IF lvlShow THEN DO:
+      RUN exportGrid
+         (INPUT SUBSTITUTE ("output\ttPoint_&1.txt", ttFold.iFoldNr)).      
+   END.
+      
    /* After FIRST Fold, leave */
-   IF  lPart[1] EQ TRUE  
-   AND lPart[2] EQ FALSE THEN DO:
+   IF  lPart[1] EQ TRUE
+   AND ttFold.iFoldNr EQ 1 THEN DO:
       /* Process Part One, only One Fold */
-      LEAVE. 
+      FOR EACH ttPoint
+      WHERE ttPoint.cChar EQ "#":
+         ACCUM "" (COUNT).
+      END.
+
+      ASSIGN
+         iSolution = (ACCUM COUNT "")
+      .
+      
+      OUTPUT TO "clipboard".
+      PUT UNFORMATTED iSolution SKIP.
+      OUTPUT CLOSE.
+      
+      MESSAGE 
+         SUBSTITUTE ("Solution: &1.", 
+            iSolution) SKIP (1)
+         SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
+      VIEW-AS ALERT-BOX TITLE " 2021 - Day 13 - Part One".
+
+      IF lPart[2] EQ FALSE THEN DO: 
+         LEAVE.
+      END.
+      ELSE DO:
+         ETIME (YES).
+      END. 
    END.
 END. /* Process Folds */
 
-FOR EACH ttPoint
-WHERE ttPoint.cChar EQ "#":
-   ACCUM "" (COUNT).
-END.
-
-ASSIGN
-   iSolution = (ACCUM COUNT "")
-.
-
-OUTPUT TO "clipboard".
-PUT UNFORMATTED iSolution SKIP.
-OUTPUT CLOSE.
-
-MESSAGE 
-   SUBSTITUTE ("Solution: &1.", 
-      iSolution) SKIP (1)
-   SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
-VIEW-AS ALERT-BOX TITLE " 2021 - Day 13 - Part One".
 
 IF lPart[2] THEN DO:
    /* Process Part Two */
-   ETIME (YES).
+   RUN exportGrid
+      (INPUT "output\ttPoint.txt").      
 
-   
-   OUTPUT TO "clipboard".
-   PUT UNFORMATTED iSolution SKIP.
-   OUTPUT CLOSE.
-   
    MESSAGE 
-      SUBSTITUTE ("Solution: &1.", 
-         iSolution) SKIP (1)
       SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
    VIEW-AS ALERT-BOX TITLE " 2021 - Day 13 - Part Two".
+   
+   RUN sy\win\show-file.w
+      (INPUT "output\ttPoint.txt").
+      
 END. /* Process Part Two */
 
 CATCH oError AS Progress.Lang.Error :
@@ -278,7 +299,7 @@ DEFINE BUFFER ttPoint FOR ttPoint.
             PUT UNFORMATTED ttPoint.cChar.
          END.
          ELSE DO:
-            PUT UNFORMATTED ".".
+            PUT UNFORMATTED " ".
          END.
       END.
       PUT UNFORMATTED SKIP.
